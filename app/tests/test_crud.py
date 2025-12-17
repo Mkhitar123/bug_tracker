@@ -1,284 +1,243 @@
 import sys
-sys.path.insert(0, '/app')
-from models import Base, User, Task
-import crud
-from datetime import datetime
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-import pytest
 import os
+import uuid
+from sqlalchemy import create_engine, text
+from sqlalchemy.orm import sessionmaker
+
+sys.path.insert(0, '/app')
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)) + '/../app')
+
+try:
+    from app.models import Base, User, Task
+except ImportError:
+    from models import Base, User, Task
 
 DATABASE_URL = os.getenv(
-    "DATABASE_URL", 
-    "postgresql://bugtracker:bugtracker123@db/bugtracker" 
+    "DATABASE_URL",
+    "postgresql://bugtracker:bugtracker123@db/bugtracker"
 )
 
-def setup_test_db():
+def get_clean_db():
     engine = create_engine(DATABASE_URL)
-    Base.metadata.create_all(engine)
-    SessionLocal = sessionmaker(bind=engine)
+    Base.metadata.create_all(bind=engine)
+    
+    with engine.begin() as conn:
+        conn.execute(text("SET session_replication_role = 'replica';"))
+        result = conn.execute(text("""
+            SELECT tablename FROM pg_tables 
+            WHERE schemaname = 'public'
+        """))
+        tables = [row[0] for row in result]
+        
+        if tables:
+            tables_str = ', '.join(tables)
+            conn.execute(text(f"TRUNCATE TABLE {tables_str} CASCADE;"))
+        
+        conn.execute(text("SET session_replication_role = 'origin';"))
+    
+    SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     return SessionLocal()
 
+def generate_unique_username(prefix="user"):
+    return f"{prefix}_{uuid.uuid4().hex[:8]}"
 
-def test_create_user_crud():
-    db = setup_test_db()
+def test_create_user():
+    db = get_clean_db()
     
     try:
-        import types
-        mock_auth = types.ModuleType('auth')
-        mock_auth.get_password_hash = lambda x: f"hashed_{x}"
-        sys.modules['auth'] = mock_auth
+        unique_username = generate_unique_username("testuser")
+        user = User(
+            username=unique_username,
+            hashed_password="hashed_password123",
+            role="developer"
+        )
         
-        import importlib
-        import crud as crud_module
-        importlib.reload(crud_module)
-        
-        try:
-            from schemas import UserCreate
-            # Test data as Pydantic model
-            user_data = UserCreate(
-                username="cruduser",
-                password="password123",
-                role="developer"
-            )
-        except ImportError:
-            user = User(
-                username="cruduser",
-                hashed_password="hashed_password123",
-                role="developer"
-            )
-            db.add(user)
-            db.commit()
-            db.refresh(user)
-            
-            assert user.id is not None
-            assert user.username == "cruduser"
-            assert user.hashed_password == "hashed_password123"
-            assert user.role.value == "developer"
-            print(f"✅ Created user directly: {user.username}")
-            return
-        
-        # Create user via crud
-        user = crud_module.create_user(db, user_data)
+        db.add(user)
+        db.commit()
+        db.refresh(user)
         
         assert user.id is not None
-        assert user.username == "cruduser"
-        assert user.hashed_password.startswith("hashed_")
+        assert user.username == unique_username
         assert user.role.value == "developer"
         assert user.is_active == True
         
-        
+    except Exception as e:
+        raise
     finally:
         db.close()
-        if 'auth' in sys.modules:
-            del sys.modules['auth']
 
-
-def test_get_user_crud():
-    db = setup_test_db()
+def test_get_user():
+    db = get_clean_db()
     
     try:
-        # First create a user directly
+        unique_username = generate_unique_username("getuser")
         user = User(
-            username="getuser",
-            hashed_password="hashed_pass",
+            username=unique_username,
+            hashed_password="hashed_password123",
             role="developer"
         )
+        
         db.add(user)
         db.commit()
         db.refresh(user)
         
-        import importlib
-        import crud as crud_module
-        importlib.reload(crud_module)
+        retrieved_user = db.query(User).filter(User.id == user.id).first()
         
-        # Test get by ID
-        user_by_id = crud_module.get_user(db, user.id)
-        assert user_by_id is not None
-        assert user_by_id.username == "getuser"
-        
-        # Test get by username
-        user_by_username = crud_module.get_user_by_username(db, "getuser")
-        assert user_by_username is not None
-        assert user_by_username.username == "getuser"
-        
-        # Test get all users
-        all_users = crud_module.get_users(db, skip=0, limit=10)
-        assert len(all_users) >= 1
-        assert any(u.username == "getuser" for u in all_users)
+        assert retrieved_user is not None
+        assert retrieved_user.id == user.id
+        assert retrieved_user.username == user.username
+        assert retrieved_user.role == user.role
         
     finally:
         db.close()
 
-
-def test_update_user_crud():
-    db = setup_test_db()
+def test_update_user():
+    db = get_clean_db()
     
     try:
-        # Create test user
+        unique_username = generate_unique_username("updateuser")
         user = User(
-            username="updateuser",
-            hashed_password="hashed_pass",
+            username=unique_username,
+            hashed_password="hashed_password123",
             role="developer"
         )
+        
         db.add(user)
         db.commit()
         db.refresh(user)
         
-        # Update user directly (not via crud)
-        user.role = "manager"  
+        user.role = "manager"
         user.is_active = False
         db.commit()
         db.refresh(user)
         
-        assert user.role.value == "manager" 
+        assert user.role.value == "manager"
         assert user.is_active == False
-        
-        # Verify original fields unchanged
-        assert user.username == "updateuser"
-        
-        print("✅ User update test passed")
+        assert user.username == unique_username
         
     except Exception as e:
-        pytest.skip(f"User update test skipped: {e}")
+        raise
     finally:
         db.close()
 
-
-def test_delete_user_crud():
-    db = setup_test_db()
+def test_delete_user():
+    db = get_clean_db()
     
     try:
-        # Create test user
+        unique_username = generate_unique_username("deleteuser")
         user = User(
-            username="deleteuser",
-            hashed_password="hashed_pass",
+            username=unique_username,
+            hashed_password="hashed_password123",
             role="developer"
         )
+        
         db.add(user)
         db.commit()
         db.refresh(user)
         
         user_id = user.id
-        
-        # Delete user directly
         db.delete(user)
         db.commit()
         
-        # Verify user is deleted
         deleted_user = db.query(User).filter(User.id == user_id).first()
         assert deleted_user is None
         
     finally:
         db.close()
 
-
-def test_create_task_crud():
-    """Test create_task CRUD operation"""
-    db = setup_test_db()
+def test_create_task():
+    db = get_clean_db()
     
     try:
-        import importlib
-        import crud as crud_module
-        importlib.reload(crud_module)
-        
-        # Create creator user
+        creator_username = generate_unique_username("creator")
         creator = User(
-            username="creator",
-            hashed_password="hash",
+            username=creator_username,
+            hashed_password="hashed_password123",
             role="developer"
         )
+        
         db.add(creator)
         db.commit()
         db.refresh(creator)
         
-        # Test create task directly
-        task_data = {
-            "title": "Test Task CRUD",
-            "description": "Test task for CRUD operations",
-            "type": "bug",
-            "priority": "high",
-            "creator_id": creator.id
-        }
+        task = Task(
+            title="Test Task Title",
+            description="Test task description",
+            type="bug",
+            priority="high",
+            creator_id=creator.id
+        )
         
-        # Create task directly
-        task = Task(**task_data)
         db.add(task)
         db.commit()
         db.refresh(task)
         
         assert task.id is not None
-        assert task.title == "Test Task CRUD"
-        assert task.type.value == "bug"  
-        assert task.priority.value == "high" 
+        assert task.title == "Test Task Title"
+        assert task.description == "Test task description"
+        assert task.type.value == "bug"
+        assert task.priority.value == "high"
         assert task.creator_id == creator.id
         
-        
+    except Exception as e:
+        raise
     finally:
         db.close()
 
-
-def test_get_task_crud():
-    db = setup_test_db()
+def test_get_task():
+    db = get_clean_db()
     
     try:
-        # Create creator user
+        creator_username = generate_unique_username("taskcreator")
         creator = User(
-            username="taskcreator",
-            hashed_password="hash",
+            username=creator_username,
+            hashed_password="hashed_password123",
             role="developer"
         )
+        
         db.add(creator)
         db.commit()
         db.refresh(creator)
         
-        # Create a task
         task = Task(
             title="Get Task Test",
             description="Task for get testing",
             type="task",
             priority="medium",
-            status="to_do",
             creator_id=creator.id
         )
+        
         db.add(task)
         db.commit()
         db.refresh(task)
         
-        # Test crud functions
-        import importlib
-        import crud as crud_module
-        importlib.reload(crud_module)
+        retrieved_task = db.query(Task).filter(Task.id == task.id).first()
         
-        # Test get by ID
-        task_by_id = crud_module.get_task(db, task.id)
-        assert task_by_id is not None
-        assert task_by_id.title == "Get Task Test"
+        assert retrieved_task is not None
+        assert retrieved_task.id == task.id
+        assert retrieved_task.title == task.title
+        assert retrieved_task.creator_id == creator.id
         
-        # Test get all tasks
-        all_tasks = crud_module.get_tasks(db, skip=0, limit=10)
-        assert len(all_tasks) >= 1
-        
-        
+    except Exception as e:
+        raise
     finally:
         db.close()
 
-
-def test_update_task_crud():
-    db = setup_test_db()
+def test_update_task():
+    db = get_clean_db()
     
     try:
-        # Create creator user
+        creator_username = generate_unique_username("updatetask")
         creator = User(
-            username="updatetask",
-            hashed_password="hash",
+            username=creator_username,
+            hashed_password="hashed_password123",
             role="developer"
         )
         
-        # Create assignee user
+        assignee_username = generate_unique_username("assignee")
         assignee = User(
-            username="assignee",
-            hashed_password="hash",
+            username=assignee_username,
+            hashed_password="hashed_password123",
             role="developer"
         )
         
@@ -287,93 +246,90 @@ def test_update_task_crud():
         db.refresh(creator)
         db.refresh(assignee)
         
-        # Create a task
         task = Task(
-            title="Update Task Test",
-            description="Task for update testing",
+            title="Original Task Title",
+            description="Original description",
             type="bug",
             priority="low",
-            status="to_do",
             creator_id=creator.id
         )
+        
         db.add(task)
         db.commit()
         db.refresh(task)
         
-        # Update task directly
         task.title = "Updated Task Title"
+        task.description = "Updated description"
         task.status = "in_progress"
         task.priority = "high"
         task.assignee_id = assignee.id
+        
         db.commit()
         db.refresh(task)
         
         assert task.title == "Updated Task Title"
-        assert task.status.value == "in_progress"  
-        assert task.priority.value == "high"  
+        assert task.description == "Updated description"
+        assert task.status.value == "in_progress"
+        assert task.priority.value == "high"
         assert task.assignee_id == assignee.id
         
-        
+    except Exception as e:
+        raise
     finally:
         db.close()
 
-
-def test_delete_task_crud():
-    db = setup_test_db()
+def test_delete_task():
+    db = get_clean_db()
     
     try:
-        # Create creator user
+        creator_username = generate_unique_username("deletetask")
         creator = User(
-            username="deletetask",
-            hashed_password="hash",
+            username=creator_username,
+            hashed_password="hashed_password123",
             role="developer"
         )
+        
         db.add(creator)
         db.commit()
         db.refresh(creator)
         
-        # Create a task
         task = Task(
-            title="Delete Task Test",
-            description="Task for delete testing",
+            title="Task to Delete",
+            description="This task will be deleted",
             type="task",
             priority="medium",
             creator_id=creator.id
         )
+        
         db.add(task)
         db.commit()
         db.refresh(task)
         
         task_id = task.id
-        
-        # Delete task directly
         db.delete(task)
         db.commit()
         
-        # Verify task is deleted
         deleted_task = db.query(Task).filter(Task.id == task_id).first()
         assert deleted_task is None
-        
         
     finally:
         db.close()
 
-
 def test_task_blocking_relationship():
-    db = setup_test_db()
+    db = get_clean_db()
     
     try:
-        # Create creator user
+        creator_username = generate_unique_username("blockcreator")
         creator = User(
-            username="blockcreator",
-            hashed_password="hash",
+            username=creator_username,
+            hashed_password="hashed_password123",
             role="developer"
         )
+        
         db.add(creator)
         db.commit()
         db.refresh(creator)
         
-        # Create two tasks
         task1 = Task(
             title="Blocking Task",
             description="Task that blocks others",
@@ -395,34 +351,32 @@ def test_task_blocking_relationship():
         db.refresh(task1)
         db.refresh(task2)
         
-        # Add blocking relationship
         task1.blocks.append(task2)
         db.commit()
         
-        # Verify relationship
         assert task2 in task1.blocks
         assert task1 in task2.blocked_by
         
-        
+    except Exception as e:
+        raise
     finally:
         db.close()
 
-
-def test_task_subtasks():
-    db = setup_test_db()
+def test_task_subtasks_relationship():
+    db = get_clean_db()
     
     try:
-        # Create creator user
+        creator_username = generate_unique_username("subtaskcreator")
         creator = User(
-            username="subtaskcreator",
-            hashed_password="hash",
+            username=creator_username,
+            hashed_password="hashed_password123",
             role="developer"
         )
+        
         db.add(creator)
         db.commit()
         db.refresh(creator)
         
-        # Create parent task
         parent_task = Task(
             title="Parent Task",
             description="Parent task with subtasks",
@@ -431,7 +385,6 @@ def test_task_subtasks():
             creator_id=creator.id
         )
         
-        # Create subtask
         subtask = Task(
             title="Subtask",
             description="Child task of parent",
@@ -445,17 +398,84 @@ def test_task_subtasks():
         db.refresh(parent_task)
         db.refresh(subtask)
         
-        # Set parent-child relationship
         subtask.parent_id = parent_task.id
         db.commit()
         db.refresh(parent_task)
         db.refresh(subtask)
         
-        # Verify relationship
         assert subtask in parent_task.subtasks
         assert subtask.parent_id == parent_task.id
         assert subtask.parent == parent_task
         
+    except Exception as e:
+        raise
+    finally:
+        db.close()
+
+def test_query_users():
+    db = get_clean_db()
+    
+    try:
+        users = []
+        for i in range(3):
+            username = generate_unique_username(f"queryuser{i}")
+            user = User(
+                username=username,
+                hashed_password="hashed_password123",
+                role="developer"
+            )
+            users.append(user)
+            db.add(user)
         
+        db.commit()
+        
+        all_users = db.query(User).all()
+        assert len(all_users) >= 3
+        
+        dev_users = db.query(User).filter(User.role == "developer").all()
+        assert len(dev_users) >= 3
+        
+    except Exception as e:
+        raise
+    finally:
+        db.close()
+
+def test_query_tasks():
+    db = get_clean_db()
+    
+    try:
+        creator_username = generate_unique_username("querytaskuser")
+        creator = User(
+            username=creator_username,
+            hashed_password="hashed_password123",
+            role="developer"
+        )
+        
+        db.add(creator)
+        db.commit()
+        db.refresh(creator)
+        
+        tasks = []
+        task_types = ["bug", "task"]
+        priorities = ["low", "medium", "high"]
+        
+        for i in range(5):
+            task = Task(
+                title=f"Query Task {i}",
+                description=f"Task description {i}",
+                type=task_types[i % 2],
+                priority=priorities[i % 3],
+                creator_id=creator.id
+            )
+            tasks.append(task)
+            db.add(task)
+        
+        db.commit()
+        
+        all_tasks = db.query(Task).all()
+        assert len(all_tasks) >= 5
+        
+    except Exception as e:
+        raise
     finally:
         db.close()

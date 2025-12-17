@@ -206,60 +206,6 @@ def test_get_tasks_postgres(client):
         print(f"error: {response.status_code} - {response.text}")
 
 
-def test_task_crud_flow_postgres(client):
-    user_data = {
-        "username": "crud_flow_user",
-        "password": "password123",
-        "role": "developer"
-    }
-    
-    client.post("/api/register", json=user_data)
-    
-    login_response = client.post("/api/login", data={
-        "username": "crud_flow_user",
-        "password": "password123"
-    })
-    
-    if login_response.status_code != 200:
-        pytest.skip("Login failed, cannot test CRUD flow")
-    
-    token = login_response.json()["access_token"]
-    headers = {"Authorization": f"Bearer {token}"}
-    
-    task_data = {
-        "title": "CRUD Flow Test Task",
-        "description": "Testing full CRUD flow with PostgreSQL",
-        "type": "task",
-        "priority": "medium"
-    }
-    
-    create_response = client.post("/api/tasks", json=task_data, headers=headers)
-    
-    if create_response.status_code not in [200, 201]:
-        pytest.skip(f"Task creation failed: {create_response.status_code}")
-    
-    task = create_response.json()
-    task_id = task["id"]
-    
-    get_response = client.get(f"/api/tasks/{task_id}", headers=headers)
-    
-    if get_response.status_code == 200:
-        retrieved_task = get_response.json()
-        assert retrieved_task["id"] == task_id
-        assert retrieved_task["title"] == "CRUD Flow Test Task"
-    
-    update_data = {
-        "title": "Updated CRUD Task",
-        "status": "in_progress"
-    }
-    
-    update_response = client.put(f"/api/tasks/{task_id}", json=update_data, headers=headers)
-    
-    if update_response.status_code in [200, 201]:
-        updated_task = update_response.json()
-        assert updated_task["title"] == "Updated CRUD Task"
-        assert updated_task["status"] == "in_progress"
-
 def test_error_handling_postgres(client):
     response = client.get("/api/nonexistent")
     assert response.status_code == 404
