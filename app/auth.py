@@ -11,7 +11,7 @@ import schemas
 from database import get_db
 
 
-SECRET_KEY = "your-secret-key-change-in-production"  
+SECRET_KEY = "asdsas612e323/'[';=]11!@#$#@!??Sqweroknxv1246"  
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 

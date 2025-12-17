@@ -4,7 +4,7 @@ from sqlalchemy.sql import func
 from database import Base
 import enum
 
-# Association table for task blocking relationships
+
 task_blocking = Table(
     'task_blocking',
     Base.metadata,
@@ -72,7 +72,7 @@ class Task(Base):
     parent = relationship("Task", remote_side=[id], back_populates="subtasks")
     subtasks = relationship("Task", back_populates="parent")
     
-    # Many-to-many for blocking relationships
+    # Many-to-many 
     blocks = relationship(
         "Task",
         secondary=task_blocking,
