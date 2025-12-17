@@ -6,22 +6,24 @@ from datetime import datetime
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 import pytest
+import os
 
+DATABASE_URL = os.getenv(
+    "DATABASE_URL", 
+    "postgresql://bugtracker:bugtracker123@db/bugtracker" 
+)
 
 def setup_test_db():
-    """Setup in-memory test database"""
-    engine = create_engine('sqlite:///:memory:')
+    engine = create_engine(DATABASE_URL)
     Base.metadata.create_all(engine)
     SessionLocal = sessionmaker(bind=engine)
     return SessionLocal()
 
 
 def test_create_user_crud():
-    """Test create_user CRUD operation"""
     db = setup_test_db()
     
     try:
-        # Mock auth module to avoid circular import
         import types
         mock_auth = types.ModuleType('auth')
         mock_auth.get_password_hash = lambda x: f"hashed_{x}"
@@ -31,7 +33,6 @@ def test_create_user_crud():
         import crud as crud_module
         importlib.reload(crud_module)
         
-        # Փորձեք օգտագործել Pydantic model
         try:
             from schemas import UserCreate
             # Test data as Pydantic model
@@ -41,7 +42,6 @@ def test_create_user_crud():
                 role="developer"
             )
         except ImportError:
-            # Եթե Pydantic model չի աշխատում, ստեղծեք User ուղղակիորեն
             user = User(
                 username="cruduser",
                 hashed_password="hashed_password123",
@@ -64,10 +64,9 @@ def test_create_user_crud():
         assert user.id is not None
         assert user.username == "cruduser"
         assert user.hashed_password.startswith("hashed_")
-        assert user.role.value == "developer"  # Enum օբյեկտ
+        assert user.role.value == "developer"
         assert user.is_active == True
         
-        print(f"✅ Created user via CRUD: {user.username}")
         
     finally:
         db.close()
@@ -76,7 +75,6 @@ def test_create_user_crud():
 
 
 def test_get_user_crud():
-    """Test get_user CRUD operations"""
     db = setup_test_db()
     
     try:
@@ -109,14 +107,11 @@ def test_get_user_crud():
         assert len(all_users) >= 1
         assert any(u.username == "getuser" for u in all_users)
         
-        print("✅ User retrieval CRUD tests passed")
-        
     finally:
         db.close()
 
 
 def test_update_user_crud():
-    """Test update_user CRUD operation"""
     db = setup_test_db()
     
     try:
@@ -131,12 +126,12 @@ def test_update_user_crud():
         db.refresh(user)
         
         # Update user directly (not via crud)
-        user.role = "manager"  # Use correct enum value
+        user.role = "manager"  
         user.is_active = False
         db.commit()
         db.refresh(user)
         
-        assert user.role.value == "manager"  # Enum օբյեկտ
+        assert user.role.value == "manager" 
         assert user.is_active == False
         
         # Verify original fields unchanged
@@ -145,14 +140,12 @@ def test_update_user_crud():
         print("✅ User update test passed")
         
     except Exception as e:
-        print(f"⚠️ User update test skipped: {e}")
         pytest.skip(f"User update test skipped: {e}")
     finally:
         db.close()
 
 
 def test_delete_user_crud():
-    """Test delete_user CRUD operation"""
     db = setup_test_db()
     
     try:
@@ -175,8 +168,6 @@ def test_delete_user_crud():
         # Verify user is deleted
         deleted_user = db.query(User).filter(User.id == user_id).first()
         assert deleted_user is None
-        
-        print("✅ User delete test passed")
         
     finally:
         db.close()
@@ -218,18 +209,16 @@ def test_create_task_crud():
         
         assert task.id is not None
         assert task.title == "Test Task CRUD"
-        assert task.type.value == "bug"  # Enum օբյեկտ
-        assert task.priority.value == "high"  # Enum օբյեկտ
+        assert task.type.value == "bug"  
+        assert task.priority.value == "high" 
         assert task.creator_id == creator.id
         
-        print("✅ Task creation test passed")
         
     finally:
         db.close()
 
 
 def test_get_task_crud():
-    """Test get_task CRUD operations"""
     db = setup_test_db()
     
     try:
@@ -270,14 +259,12 @@ def test_get_task_crud():
         all_tasks = crud_module.get_tasks(db, skip=0, limit=10)
         assert len(all_tasks) >= 1
         
-        print("✅ Task retrieval CRUD tests passed")
         
     finally:
         db.close()
 
 
 def test_update_task_crud():
-    """Test update_task CRUD operation"""
     db = setup_test_db()
     
     try:
@@ -322,18 +309,16 @@ def test_update_task_crud():
         db.refresh(task)
         
         assert task.title == "Updated Task Title"
-        assert task.status.value == "in_progress"  # Enum օբյեկտ
-        assert task.priority.value == "high"  # Enum օբյեկտ
+        assert task.status.value == "in_progress"  
+        assert task.priority.value == "high"  
         assert task.assignee_id == assignee.id
         
-        print("✅ Task update test passed")
         
     finally:
         db.close()
 
 
 def test_delete_task_crud():
-    """Test delete_task CRUD operation"""
     db = setup_test_db()
     
     try:
@@ -369,14 +354,12 @@ def test_delete_task_crud():
         deleted_task = db.query(Task).filter(Task.id == task_id).first()
         assert deleted_task is None
         
-        print("✅ Task delete test passed")
         
     finally:
         db.close()
 
 
 def test_task_blocking_relationship():
-    """Test task blocking relationships"""
     db = setup_test_db()
     
     try:
@@ -420,14 +403,12 @@ def test_task_blocking_relationship():
         assert task2 in task1.blocks
         assert task1 in task2.blocked_by
         
-        print("✅ Task blocking relationship test passed")
         
     finally:
         db.close()
 
 
 def test_task_subtasks():
-    """Test task subtask relationships"""
     db = setup_test_db()
     
     try:
@@ -475,7 +456,6 @@ def test_task_subtasks():
         assert subtask.parent_id == parent_task.id
         assert subtask.parent == parent_task
         
-        print("✅ Task subtask relationship test passed")
         
     finally:
         db.close()

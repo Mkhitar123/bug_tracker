@@ -4,14 +4,14 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 from contextlib import asynccontextmanager
 
-# Import our modules
+
 from database import engine, get_db
 import models
 import schemas
 import crud
 import auth
 
-# Create tables on startup
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     models.Base.metadata.create_all(bind=engine)
@@ -19,15 +19,15 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Bug Tracker API",
-    description="A simplified bug tracking system",
+    description="A simple bug tracking system",
     version="1.0.0",
     lifespan=lifespan
 )
 
-# Authentication endpoints
+# Authentication endpoint
 @app.post("/token", response_model=schemas.Token)
 async def login(form_data: OAuth2PasswordRequestForm = Depends(),db: Session = Depends(get_db)):
-    # This just uses the dependency
+
     return await auth.login_for_access_token(form_data, db)
 
 @app.post("/register", response_model=schemas.UserInDB)
@@ -177,7 +177,6 @@ def search_tasks(
     tasks = crud.search_tasks(db, search=search)
     return tasks
 
-# Health check
 @app.get("/")
 def root():
     return {"message": "Bug Tracker API is running"}

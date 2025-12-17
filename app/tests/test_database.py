@@ -8,7 +8,6 @@ from database import Base, get_db, SessionLocal
 
 
 def test_database_connection():
-    """Test PostgreSQL database connection"""
     try:
         # Connect to PostgreSQL
         engine = create_engine('postgresql://bugtracker:bugtracker123@db/bugtracker')
@@ -33,7 +32,6 @@ def test_database_connection():
 
 
 def test_session_local_with_postgres():
-    """Test SessionLocal factory with PostgreSQL"""
     try:
         engine = create_engine('postgresql://bugtracker:bugtracker123@db/bugtracker')
         TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -45,7 +43,6 @@ def test_session_local_with_postgres():
         result = session.execute(text("SELECT 1"))
         assert result.scalar() == 1
         
-        # Test PostgreSQL-specific query
         result = session.execute(text("SELECT current_database()"))
         db_name = result.scalar()
         assert db_name == "bugtracker"
@@ -58,12 +55,10 @@ def test_session_local_with_postgres():
 
 
 def test_get_db_generator():
-    """Test get_db dependency generator with PostgreSQL"""
     try:
         engine = create_engine('postgresql://bugtracker:bugtracker123@db/bugtracker')
         TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
         
-        # Mock the dependency
         def mock_get_db():
             db = TestingSessionLocal()
             try:
@@ -95,12 +90,10 @@ def test_get_db_generator():
 
 
 def test_postgresql_specific_features():
-    """Test PostgreSQL-specific features"""
     try:
         engine = create_engine('postgresql://bugtracker:bugtracker123@db/bugtracker')
         connection = engine.connect()
         
-        # Test PostgreSQL extensions
         result = connection.execute(text("""
             SELECT extname 
             FROM pg_extension 
@@ -109,7 +102,6 @@ def test_postgresql_specific_features():
         extensions = [row[0] for row in result]
         print(f"Available PostgreSQL extensions: {extensions}")
         
-        # Test JSON support (PostgreSQL feature)
         result = connection.execute(text("SELECT version() ~ 'PostgreSQL' as is_postgres"))
         assert result.scalar() == True
         

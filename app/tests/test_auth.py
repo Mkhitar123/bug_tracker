@@ -9,13 +9,11 @@ create_access_token = auth.create_access_token
 
 
 def test_auth_import():
-    """Test that auth module imports correctly"""
     assert verify_password is not None
     assert get_password_hash is not None
 
 
 def test_password_hashing():
-    """Test password hashing and verification"""
     password = "test123"
     hashed = get_password_hash(password)
     
@@ -24,7 +22,6 @@ def test_password_hashing():
 
 
 def test_token_creation():
-    """Test JWT token creation"""
     data = {"sub": "test@example.com"}
     token = create_access_token(data)
     
